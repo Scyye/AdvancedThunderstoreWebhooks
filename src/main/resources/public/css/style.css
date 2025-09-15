@@ -1,0 +1,123 @@
+/* Basic reset */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Dark Discord-inspired background */
+body {
+    background-color: #36393f;
+    color: #dcddde;
+    line-height: 1.6;
+    padding: 20px;
+}
+
+/* Headings */
+h1, h2, h3 {
+    color: #ffffff;
+    margin-bottom: 10px;
+}
+
+/* Buttons */
+button {
+    background-color: #5865f2;
+    border: none;
+    color: #ffffff;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-left: 4px;
+}
+
+button:hover {
+    background-color: #4752c4;
+}
+
+/* Inputs */
+input[type=text], input[type=password] {
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px solid #202225;
+    background-color: #202225;
+    color: #ffffff;
+    margin-bottom: 6px;
+    transition: all 0.2s ease;
+}
+
+input[type=text]:focus, input[type=password]:focus {
+    outline: none;
+    border-color: #5865f2;
+}
+
+/* Tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    background-color: #2f3136;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+thead {
+    background-color: #202225;
+}
+
+thead th {
+    padding: 10px;
+    text-align: left;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+tbody td {
+    padding: 8px;
+}
+
+tbody tr {
+    border-bottom: 1px solid #42454a;
+    transition: background 0.2s;
+}
+
+tbody tr:hover {
+    background-color: #3a3c43;
+}
+
+/* Editable input inside table */
+tbody input {
+    width: 100%;
+    padding: 4px 6px;
+    border-radius: 4px;
+    border: 1px solid #42454a;
+    background-color: #2f3136;
+    color: #ffffff;
+}
+
+/* Links */
+a {
+    color: #00b0f4;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* Layouts */
+#auth, #dashboard, #admin, #accounts {
+    max-width: 1200px;
+    margin: auto;
+}
+
+.add-rule-section {
+    margin-top: 20px;
+}
+
+/* Responsive table scrolling */
+table {
+    display: block;
+    overflow-x: auto;
+}
