@@ -11,62 +11,46 @@ import com.google.gson.GsonBuilder;
 import org.jetbrains.annotations.Nullable;
 
 import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAccessor;
 import java.util.*;
 import java.util.concurrent.*;
 
 public class Main {
+	private static final RuleService ruleService = new RuleService();
+	private static final List<ExtraRule> cachedRules = new CopyOnWriteArrayList<>();
+	private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+
 	private static final Map<String, PackageListing> packageCache = new ConcurrentHashMap<>();
-	private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 	private static final JDAWebhookClient webhook = JDAWebhookClient.withUrl("https://discord.com/api/webhooks/1412479049137131622/I1DxMQk4UgcvJUZx2vWx3iR4iFlcXWVLLHUi_gK3KREjl2cThJaD3qm4U-E7-fKmUlNF");
 	private static final ObjectMapper objectMapper = new ObjectMapper()
 			.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
-	private static final List<ExtraRule> extraRules = new ArrayList<>(){
-	};
-	private static final Path rulesPath = Path.of("ATW-assets","rules.json");
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws Exception {
+		new Thread(WebServer::start).start();
 		Client client = new Client("https://thunderstore.io/");
-		long startTime = System.currentTimeMillis();
 
-		try {
-			String rawRules = Files.readString(rulesPath);
-			ExtraRule[] loadedRules = objectMapper.readValue(rawRules, ExtraRule[].class);
-			extraRules.addAll(Arrays.asList(loadedRules));
-			System.out.println("Loaded " + extraRules.size() + " extra rules from " + rulesPath.toAbsolutePath());
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
+		// Load rules into cache initially
+		cachedRules.addAll(ruleService.getAllRulesForUser());
+		System.out.println("Loaded " + cachedRules.size() + " rules from DB.");
 
-		try {
-			// Fetch initial packages
-			fetchInitialPackages(client);
-			System.out.println("Fetched all packages in " + (System.currentTimeMillis() - startTime) + "ms.");
+		// Schedule periodic refresh every 2 minutes
+		scheduler.scheduleAtFixedRate(() -> {
+			try {
+				List<ExtraRule> freshRules = ruleService.getAllRulesForUser();
+				cachedRules.clear();
+				cachedRules.addAll(freshRules);
+				System.out.println("Refreshed rules cache, total: " + cachedRules.size());
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}, 2, 2, TimeUnit.MINUTES);
 
-			// Schedule periodic task
-			scheduler.scheduleAtFixedRate(() -> checkForUpdates(client), 0, 5, TimeUnit.SECONDS);
-			scheduler.scheduleAtFixedRate(() -> {
-				try {
-					// if it hasnt been modified in the last minute, it hasnt changed so skip
-					if (Files.getLastModifiedTime(rulesPath).toMillis() < System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(1)) {
-						return;
-					}
-
-					String rawRules = Files.readString(rulesPath);
-					ExtraRule[] loadedRules = objectMapper.readValue(rawRules, ExtraRule[].class);
-					extraRules.clear();
-					extraRules.addAll(Arrays.asList(loadedRules));
-					System.out.println("Reloaded " + extraRules.size() + " extra rules from " + rulesPath.toAbsolutePath());
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
-			}, 0, 1, TimeUnit.MINUTES);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
+		// Fetch initial packages
+		fetchInitialPackages(client);
+		scheduler.scheduleAtFixedRate(() ->
+				checkForUpdates(client),
+				5, 5, TimeUnit.SECONDS);
 	}
 
 	private static void fetchInitialPackages(Client client) throws Exception {
@@ -80,21 +64,23 @@ public class Main {
 		long startTime = System.currentTimeMillis();
 
 		try {
-			// Fetch updated packages
 			DataObject packagesData = client.get("/api/experimental/package", new DataObject());
 			String rawPackageJson = (String) packagesData.get("results");
 			List<PackageListing> packages = Arrays.asList(objectMapper.readValue(rawPackageJson, PackageListing[].class));
 
-			// Check for updates
 			packages.stream()
 					.filter(Main::isUpdated)
 					.forEach(packageListing -> {
 						System.out.println("New or updated package: " + packageListing.getName());
 						packageCache.put(packageListing.packageUrl.toString(), packageListing);
+
+						// default webhook
 						sendWebhook(packageListing, null);
-						extraRules.stream().filter(r -> r.shouldApply(packageListing)).forEach((rule) -> {
-							sendWebhook(packageListing, rule);
-						});
+
+						// extra rules from DB
+						cachedRules.stream()
+								.filter(r -> r.shouldApply(packageListing))
+								.forEach(rule -> sendWebhook(packageListing, rule));
 					});
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -102,6 +88,7 @@ public class Main {
 
 		System.out.println("Checked for new packages in " + (System.currentTimeMillis() - startTime) + "ms.");
 	}
+
 
 	private static boolean isUpdated(PackageListing pkg) {
 		PackageListing old = packageCache.get(pkg.packageUrl.toString());
