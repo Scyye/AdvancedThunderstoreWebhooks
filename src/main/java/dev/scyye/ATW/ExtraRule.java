@@ -1,4 +1,4 @@
-package dev.scyye;
+package dev.scyye.ATW;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;

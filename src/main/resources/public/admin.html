@@ -1,0 +1,16 @@
+<h1>Admin Dashboard - All Users' Rules</h1>
+<a href="accounts.html">Switch Account</a>
+<label>Filter by User: <input id="user-filter" oninput="loadRules()"></label>
+<div class="table-container">
+<table id="rules-table">
+  <thead>
+  <tr>
+    <th>User</th><th>Name</th><th>Community Regex</th><th>Package Regex</th>
+    <th>Version Regex</th><th>Description Regex</th><th>General Regex</th>
+    <th>Webhook URL</th><th>Actions</th>
+  </tr>
+  </thead>
+  <tbody id="rules-body"></tbody>
+</table>
+</div>
+<script src="js/main.js"></script>

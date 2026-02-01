@@ -1,4 +1,4 @@
-package dev.scyye;
+package dev.scyye.ATW;
 
 import club.minnced.discord.webhook.external.JDAWebhookClient;
 import club.minnced.discord.webhook.send.WebhookEmbed;
@@ -8,70 +8,88 @@ import club.minnced.discord.webhook.send.WebhookMessageBuilder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.google.gson.GsonBuilder;
+import dev.scyye.DataObject;
 import org.jetbrains.annotations.Nullable;
 
+import dev.scyye.Client;
+
 import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAccessor;
 import java.util.*;
 import java.util.concurrent.*;
 
 public class Main {
+	private static final RuleService ruleService = new RuleService();
+	private static final List<ExtraRule> cachedRules = new CopyOnWriteArrayList<>();
+	private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+
 	private static final Map<String, PackageListing> packageCache = new ConcurrentHashMap<>();
-	private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 	private static final JDAWebhookClient webhook = JDAWebhookClient.withUrl("https://discord.com/api/webhooks/1412479049137131622/I1DxMQk4UgcvJUZx2vWx3iR4iFlcXWVLLHUi_gK3KREjl2cThJaD3qm4U-E7-fKmUlNF");
 	private static final ObjectMapper objectMapper = new ObjectMapper()
 			.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
-	private static final List<ExtraRule> extraRules = new ArrayList<>(){
-	};
-	private static final Path rulesPath = Path.of("ATW-assets","rules.json");
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws Exception {
+		new Thread(WebServer::start).start();
 		Client client = new Client("https://thunderstore.io/");
-		long startTime = System.currentTimeMillis();
 
+		// Load rules into cache initially
+		cachedRules.addAll(ruleService.getAllRulesForUser());
+		System.out.println("Loaded " + cachedRules.size() + " rules from DB.");
+
+		// Schedule periodic refresh every 2 minutes
+		scheduler.scheduleAtFixedRate(() -> {
+			try {
+				List<ExtraRule> freshRules = ruleService.getAllRulesForUser();
+				cachedRules.clear();
+				cachedRules.addAll(freshRules);
+				System.out.println("Refreshed rules cache, total: " + cachedRules.size());
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}, 2, 2, TimeUnit.MINUTES);
+
+		// Fetch initial packages - guard any throwable so we can log and keep the process running
 		try {
-			String rawRules = Files.readString(rulesPath);
-			ExtraRule[] loadedRules = objectMapper.readValue(rawRules, ExtraRule[].class);
-			extraRules.addAll(Arrays.asList(loadedRules));
-			System.out.println("Loaded " + extraRules.size() + " extra rules from " + rulesPath.toAbsolutePath());
-		} catch (Exception e) {
-			e.printStackTrace();
+			fetchInitialPackages(client);
+		} catch (Throwable t) {
+			System.err.println("Fatal error during initial package fetch:");
+			t.printStackTrace();
+			// don't rethrow; keep scheduler and webserver running for debugging
 		}
 
-		try {
-			// Fetch initial packages
-			fetchInitialPackages(client);
-			System.out.println("Fetched all packages in " + (System.currentTimeMillis() - startTime) + "ms.");
-
-			// Schedule periodic task
-			scheduler.scheduleAtFixedRate(() -> checkForUpdates(client), 0, 5, TimeUnit.SECONDS);
-			scheduler.scheduleAtFixedRate(() -> {
+		scheduler.scheduleAtFixedRate(() -> {
 				try {
-					// if it hasnt been modified in the last minute, it hasnt changed so skip
-					if (Files.getLastModifiedTime(rulesPath).toMillis() < System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(1)) {
-						return;
-					}
-
-					String rawRules = Files.readString(rulesPath);
-					ExtraRule[] loadedRules = objectMapper.readValue(rawRules, ExtraRule[].class);
-					extraRules.clear();
-					extraRules.addAll(Arrays.asList(loadedRules));
-					System.out.println("Reloaded " + extraRules.size() + " extra rules from " + rulesPath.toAbsolutePath());
+					checkForUpdates(client);
 				} catch (Exception e) {
 					e.printStackTrace();
 				}
-			}, 0, 1, TimeUnit.MINUTES);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
+			},
+				5, 60, TimeUnit.SECONDS);
 	}
 
 	private static void fetchInitialPackages(Client client) throws Exception {
-		DataObject packagesData = client.get("/api/experimental/package", new DataObject());
-		String rawPackageJson = (String) packagesData.get("results");
+		System.out.println("Test");
+		System.out.println("Fetching initial packages...");
+		DataObject packagesData = null;
+		try {
+			packagesData = client.get("/api/experimental/package", new DataObject());
+			System.out.println("Fetched initial packages.");
+		} catch (Exception e) {
+			System.out.println("Error fetching initial packages: " + e.getMessage());
+			e.printStackTrace();
+		}
+
+		if (packagesData == null) {
+			System.out.println("No packagesData returned; skipping initial package load.");
+			return;
+		}
+
+		System.out.println(packagesData);
+		Object resultsObj = packagesData.get("results");
+		String rawPackageJson;
+		if (resultsObj instanceof String) rawPackageJson = (String) resultsObj;
+		else rawPackageJson = objectMapper.writeValueAsString(resultsObj);
 		List<PackageListing> packages = Arrays.asList(objectMapper.readValue(rawPackageJson, PackageListing[].class));
 		packages.forEach(packageListing -> packageCache.put(packageListing.packageUrl.toString(), packageListing));
 	}
@@ -80,21 +98,25 @@ public class Main {
 		long startTime = System.currentTimeMillis();
 
 		try {
-			// Fetch updated packages
+			DataObject headers = new DataObject();
+			headers.put("User-Agent", "ATW-Agent/1.0 (@scyye)");
 			DataObject packagesData = client.get("/api/experimental/package", new DataObject());
 			String rawPackageJson = (String) packagesData.get("results");
 			List<PackageListing> packages = Arrays.asList(objectMapper.readValue(rawPackageJson, PackageListing[].class));
 
-			// Check for updates
 			packages.stream()
 					.filter(Main::isUpdated)
 					.forEach(packageListing -> {
 						System.out.println("New or updated package: " + packageListing.getName());
 						packageCache.put(packageListing.packageUrl.toString(), packageListing);
+
+						// default webhook
 						sendWebhook(packageListing, null);
-						extraRules.stream().filter(r -> r.shouldApply(packageListing)).forEach((rule) -> {
-							sendWebhook(packageListing, rule);
-						});
+
+						// extra rules from DB
+						cachedRules.stream()
+								.filter(r -> r.shouldApply(packageListing))
+								.forEach(rule -> sendWebhook(packageListing, rule));
 					});
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -102,6 +124,7 @@ public class Main {
 
 		System.out.println("Checked for new packages in " + (System.currentTimeMillis() - startTime) + "ms.");
 	}
+
 
 	private static boolean isUpdated(PackageListing pkg) {
 		PackageListing old = packageCache.get(pkg.packageUrl.toString());
@@ -134,10 +157,10 @@ public class Main {
 						.setThumbnailUrl(pkg.getLatest().icon)
 						.setFooter(getFormattedTime(pkg.getDateUpdated()))
 						.build()
-		)
-				.setUsername(rule.name)
-				.setAvatarUrl(rule.pfp)
-				.build();
+			)
+					.setUsername(rule.name)
+					.setAvatarUrl(rule.pfp)
+					.build();
 		Main.webhook.send(message);
 	}
 
