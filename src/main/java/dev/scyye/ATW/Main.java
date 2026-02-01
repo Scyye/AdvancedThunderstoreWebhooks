@@ -1,4 +1,4 @@
-package dev.scyye;
+package dev.scyye.ATW;
 
 import club.minnced.discord.webhook.external.JDAWebhookClient;
 import club.minnced.discord.webhook.send.WebhookEmbed;
@@ -8,7 +8,10 @@ import club.minnced.discord.webhook.send.WebhookMessageBuilder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.google.gson.GsonBuilder;
+import dev.scyye.DataObject;
 import org.jetbrains.annotations.Nullable;
+
+import dev.scyye.Client;
 
 import java.net.URL;
 import java.time.format.DateTimeFormatter;
@@ -46,16 +49,47 @@ public class Main {
 			}
 		}, 2, 2, TimeUnit.MINUTES);
 
-		// Fetch initial packages
-		fetchInitialPackages(client);
-		scheduler.scheduleAtFixedRate(() ->
-				checkForUpdates(client),
-				5, 5, TimeUnit.SECONDS);
+		// Fetch initial packages - guard any throwable so we can log and keep the process running
+		try {
+			fetchInitialPackages(client);
+		} catch (Throwable t) {
+			System.err.println("Fatal error during initial package fetch:");
+			t.printStackTrace();
+			// don't rethrow; keep scheduler and webserver running for debugging
+		}
+
+		scheduler.scheduleAtFixedRate(() -> {
+				try {
+					checkForUpdates(client);
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			},
+				5, 60, TimeUnit.SECONDS);
 	}
 
 	private static void fetchInitialPackages(Client client) throws Exception {
-		DataObject packagesData = client.get("/api/experimental/package", new DataObject());
-		String rawPackageJson = (String) packagesData.get("results");
+		System.out.println("Test");
+		System.out.println("Fetching initial packages...");
+		DataObject packagesData = null;
+		try {
+			packagesData = client.get("/api/experimental/package", new DataObject());
+			System.out.println("Fetched initial packages.");
+		} catch (Exception e) {
+			System.out.println("Error fetching initial packages: " + e.getMessage());
+			e.printStackTrace();
+		}
+
+		if (packagesData == null) {
+			System.out.println("No packagesData returned; skipping initial package load.");
+			return;
+		}
+
+		System.out.println(packagesData);
+		Object resultsObj = packagesData.get("results");
+		String rawPackageJson;
+		if (resultsObj instanceof String) rawPackageJson = (String) resultsObj;
+		else rawPackageJson = objectMapper.writeValueAsString(resultsObj);
 		List<PackageListing> packages = Arrays.asList(objectMapper.readValue(rawPackageJson, PackageListing[].class));
 		packages.forEach(packageListing -> packageCache.put(packageListing.packageUrl.toString(), packageListing));
 	}
@@ -64,6 +98,8 @@ public class Main {
 		long startTime = System.currentTimeMillis();
 
 		try {
+			DataObject headers = new DataObject();
+			headers.put("User-Agent", "ATW-Agent/1.0 (@scyye)");
 			DataObject packagesData = client.get("/api/experimental/package", new DataObject());
 			String rawPackageJson = (String) packagesData.get("results");
 			List<PackageListing> packages = Arrays.asList(objectMapper.readValue(rawPackageJson, PackageListing[].class));
@@ -121,10 +157,10 @@ public class Main {
 						.setThumbnailUrl(pkg.getLatest().icon)
 						.setFooter(getFormattedTime(pkg.getDateUpdated()))
 						.build()
-		)
-				.setUsername(rule.name)
-				.setAvatarUrl(rule.pfp)
-				.build();
+			)
+					.setUsername(rule.name)
+					.setAvatarUrl(rule.pfp)
+					.build();
 		Main.webhook.send(message);
 	}
 

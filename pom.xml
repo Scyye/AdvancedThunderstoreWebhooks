@@ -24,7 +24,7 @@
                             <transformers>
                                 <transformer
                                         implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>dev.scyye.Main</mainClass>
+                                    <mainClass>dev.scyye.ATW.Main</mainClass>
                                 </transformer>
                             </transformers>
 
@@ -38,15 +38,15 @@
     </build>
 
     <properties>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
     <dependencies>
         <dependency>
             <groupId>dev.scyye</groupId>
             <artifactId>APIPointPolicy</artifactId>
-            <version>1.0-SNAPSHOT.3</version>
+            <version>1.0-SNAPSHOT.4</version>
         </dependency>
         <dependency>
             <groupId>club.minnced</groupId>

@@ -1,4 +1,4 @@
-package dev.scyye;
+package dev.scyye.ATW;
 
 import org.mindrot.jbcrypt.BCrypt;
 

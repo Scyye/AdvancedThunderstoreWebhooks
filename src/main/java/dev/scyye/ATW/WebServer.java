@@ -1,4 +1,4 @@
-package dev.scyye;
+package dev.scyye.ATW;
 
 import com.google.gson.Gson;
 
@@ -12,7 +12,7 @@ public class WebServer {
 	private static final RuleService ruleService = new RuleService();
 
 	public static void start() {
-		port(8080);
+		port(8081);
 		staticFiles.location("/public");
 
 		// ---------------- AUTH ---------------- //
